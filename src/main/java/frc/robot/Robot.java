@@ -8,7 +8,11 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.util.Vector;
 
+import com.ctre.phoenix.motorcontrol.NeutralMode;
+import com.ctre.phoenix.motorcontrol.TalonFXInvertType;
 import com.ctre.phoenix.motorcontrol.can.WPI_TalonFX;
+import com.revrobotics.CANSparkMax;
+import com.revrobotics.CANSparkMaxLowLevel.MotorType;
 
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
@@ -27,28 +31,24 @@ import edu.wpi.first.wpilibj.drive.DifferentialDrive;
  */
 public class Robot extends TimedRobot {
 
-  private final SpeedControllerGroup m_leftMotors = 
-      new SpeedControllerGroup(
-        new WPI_TalonFX(1), 
-        new WPI_TalonFX(2));
-    
-  private final SpeedControllerGroup m_rightMotors = 
-      new SpeedControllerGroup(
-        new WPI_TalonFX(3), 
-        new WPI_TalonFX(4));
-    
-  private final DifferentialDrive m_drive = new DifferentialDrive(m_leftMotors, m_rightMotors);
+  private final WPI_TalonFX leftMaster = new WPI_TalonFX(1);
+  private final WPI_TalonFX leftFollower = new WPI_TalonFX(2);
+  private final WPI_TalonFX rightMaster = new WPI_TalonFX(3);
+  private final WPI_TalonFX rightFollower = new WPI_TalonFX(4);
+
+  private final SpeedControllerGroup m_leftGroup = new SpeedControllerGroup(leftMaster, leftFollower);
+  private final SpeedControllerGroup m_rightGroup = new SpeedControllerGroup(rightMaster, rightFollower);
+
+  private final DifferentialDrive drive = new DifferentialDrive(m_leftGroup, m_rightGroup);
 
   private final XboxController controller = new XboxController(1);
-
-  private final Timer m_timer = new Timer();
 
   private JSONArray xValues = new JSONArray();
   private JSONArray yValues = new JSONArray();
 
   private JSONObject jsonObject = new JSONObject();
 
-  private boolean written = false;
+  private final CANSparkMax roller = new CANSparkMax(6, MotorType.kBrushless);
 
   /**
    * This function is run when the robot is first started up and should be used for any
@@ -56,6 +56,31 @@ public class Robot extends TimedRobot {
    */
   @Override
   public void robotInit() {
+
+    leftMaster.configFactoryDefault();
+    leftFollower.configFactoryDefault();
+    rightMaster.configFactoryDefault();
+    rightFollower.configFactoryDefault();
+
+    leftFollower.follow(leftMaster);
+    rightFollower.follow(rightMaster);
+
+    leftMaster.setNeutralMode(NeutralMode.Brake);
+    leftFollower.setNeutralMode(NeutralMode.Brake);
+    rightMaster.setNeutralMode(NeutralMode.Brake);
+    rightFollower.setNeutralMode(NeutralMode.Brake);
+
+    leftMaster.setInverted(TalonFXInvertType.Clockwise);
+    leftFollower.setInverted(TalonFXInvertType.Clockwise);
+    rightMaster.setInverted(TalonFXInvertType.CounterClockwise);
+    rightFollower.setInverted(TalonFXInvertType.CounterClockwise);
+
+    roller.restoreFactoryDefaults();
+
+    
+    roller.setInverted(false);
+
+    drive.setRightSideInverted(false);
 
   }
 
@@ -93,42 +118,39 @@ public class Robot extends TimedRobot {
   /** This function is called once when teleop is enabled. */
   @Override
   public void teleopInit() {
-    m_timer.reset();
-    m_timer.start();
+
   }
 
   /** This function is called periodically during operator control. */
   @Override
   public void teleopPeriodic() {
-    double x = controller.getRawAxis(1);
-    double y = controller.getRawAxis(4);
+    double x = -controller.getRawAxis(1) * 0.7;
+    double y = -controller.getRawAxis(4) * 0.7;
 
-    m_drive.arcadeDrive(x, y);
+    roller.set(-0.5);
 
-    if (m_timer.get() < 60) {
+    drive.arcadeDrive(x, y);
+
       xValues.add(x);
       yValues.add(y);
-    } else {
-      if(!written) {
-        jsonObject.put("x", xValues);
-        jsonObject.put("y", yValues);
 
-        try {
-          FileWriter file = new FileWriter("/home/lvuser/test.json");
-          file.write(jsonObject.toJSONString());
-          file.close();
-        } catch (IOException e) {
-          e.printStackTrace();
-        }
 
-        written = true;
-      }
-    }
   }
 
   /** This function is called once when the robot is disabled. */
   @Override
-  public void disabledInit() {}
+  public void disabledInit() {
+    jsonObject.put("x", xValues);
+    jsonObject.put("y", yValues);
+
+    try {
+      FileWriter file = new FileWriter("/home/lvuser/blueB.json");
+      file.write(jsonObject.toJSONString());
+      file.close();
+    } catch (IOException e) {
+      e.printStackTrace();
+    }
+  }
 
   /** This function is called periodically when disabled. */
   @Override
